@@ -491,6 +491,75 @@ Potential future improvements include:
 
 ---
 
+
+## 🧰 Troubleshooting Guide
+
+If RepoSnap does not work as expected, check the following common issues before reporting a bug.
+
+### 1. Missing API Configuration
+
+**Symptoms:** The backend fails to start or repository analysis returns a server error.
+
+**What to check:**
+- Ensure a `.env` file exists in the project root.
+- Verify that `GITHUB_TOKEN` and `GROQ_API_KEY` are configured.
+- Check that the API keys are valid and have not expired.
+- Restart the backend after changing environment variables.
+
+### 2. Invalid GitHub Repository URL
+
+**Symptoms:** The API returns `400 Bad Request` or `404 Not Found`.
+
+**What to check:**
+- Provide a valid GitHub repository URL.
+- Confirm that the repository exists and is publicly accessible.
+- Verify that the URL contains both the repository owner and repository name.
+
+### 3. API Rate Limits
+
+**Symptoms:** Repository analysis fails after multiple requests, potentially with `429 Too Many Requests`.
+
+**What to check:**
+- Review the response from the affected API.
+- Check the GitHub or Groq API rate limits.
+- Wait for the applicable rate limit window to reset before retrying.
+
+### 4. Upstream API Errors
+
+**Symptoms:** The backend returns `502 Bad Gateway` or `504 Gateway Timeout`.
+
+**What to check:**
+- Verify your internet connection.
+- Check whether the GitHub and Groq services are accessible.
+- Retry the request after a short wait.
+- Review the backend terminal output for additional error details.
+
+### 5. Frontend Cannot Connect to the Backend
+
+**Symptoms:** Repository analysis fails when using the web interface.
+
+**What to check:**
+- Confirm that the FastAPI backend is running on `http://127.0.0.1:8000`.
+- Open `http://127.0.0.1:8000/docs` to check whether the API documentation is accessible.
+- Confirm that the frontend is configured to send requests to the correct backend URL.
+- Check the browser's developer console for network or CORS errors.
+
+### 6. Missing Python Dependencies
+
+**Symptoms:** The backend fails to start because a Python module cannot be imported.
+
+**What to check:**
+- Activate the project's virtual environment.
+- Install the dependencies using:
+
+  ```bash
+  pip install -r requirements.txt
+  ```
+
+- Restart the backend after installation.
+
+If the issue persists, include the error message, the affected endpoint, and the steps needed to reproduce the problem when reporting it.
+
 ## 👩‍💻 Project
 
 **RepoSnap**

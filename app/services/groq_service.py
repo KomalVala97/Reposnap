@@ -266,7 +266,7 @@ async def generate_groq_analysis(repo: RepositoryDetails, activity: RepositoryAc
 
     last_error_detail = "Failed to communicate with Groq API"
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=30.0, trust_env=False) as client:
         for model in models_to_try:
             payload = {
                 "model": model,

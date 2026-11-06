@@ -39,7 +39,9 @@ RepoSnap/
 │       └── groq_service.py   # Groq API integration and prompt orchestration
 ├── .env.example             # Template for required environment variables
 ├── .gitignore               # Excludes secrets, caches, and virtualenvs
-├── index.html               # RepoSnap frontend interface
+├── index.html               # RepoSnap UI markup (served by FastAPI at /)
+├── styles.css               # UI theme, layout, and responsive styles
+├── app.js                   # UI logic: API calls, charts, AI overview, recents
 ├── requirements.txt         # Python project dependencies
 └── README.md                # Documentation and setup instructions
 ```
@@ -122,7 +124,7 @@ GROQ_MODEL=openai/gpt-oss-120b
 
 ---
 
-## 🚀 Running the Backend
+## 🚀 Running the App
 
 Start the FastAPI development server with hot reload:
 
@@ -130,35 +132,31 @@ Start the FastAPI development server with hot reload:
 uvicorn app.main:app --reload --port 8000
 ```
 
-The backend will be available at:
+Then open the app in your browser:
 
+- **RepoSnap UI:** `http://127.0.0.1:8000/`
 - **API Base URL:** `http://127.0.0.1:8000`
 - **Interactive Swagger Docs:** `http://127.0.0.1:8000/docs`
 - **ReDoc Documentation:** `http://127.0.0.1:8000/redoc`
 
+The UI (`index.html`, `styles.css`, `app.js`) is served by FastAPI from the
+project root, so the frontend and API share one origin and no extra web server
+or build step is required. API keys stay on the server in `.env`.
+
 ---
 
-## 🌐 Running the Frontend
+## 🌐 Frontend
 
-RepoSnap currently uses a lightweight HTML/CSS/JavaScript frontend.
+The frontend is a single-page vanilla HTML/CSS/JS app:
 
-From the project root, run:
+- Calls `POST /api/analyze` for repository data and the AI overview in one request.
+- Calls `POST /api/ai` to regenerate the AI overview without re-fetching GitHub.
+- Renders language and community charts through the QuickChart image API, with a
+  local fallback when QuickChart is unreachable.
+- Remembers recent searches in `localStorage`; no API keys are stored in the browser.
 
-```bash
-python -m http.server 5500
-```
-
-Then open:
-
-```text
-http://127.0.0.1:5500/index.html
-```
-
-The frontend communicates with the FastAPI backend through:
-
-```text
-http://127.0.0.1:8000/api/analyze
-```
+If you open `index.html` directly from disk (`file://`), the UI falls back to
+`http://127.0.0.1:8000` for API calls, so the backend still needs to be running.
 
 ---
 
@@ -179,7 +177,7 @@ FastAPI Backend
   │                     │
   │                     ▼
   │              Repository metadata
-  │              + recent commits
+  │              + languages + recent commits
   │
   └──────────────► Groq API
                         │
@@ -199,22 +197,25 @@ FastAPI Backend
                  Visual analytics
 ```
 
+If the Groq step fails, `/api/analyze` still returns the repository data with an
+`ai_error` field, so metrics and charts remain usable.
+
 ### Backend Responsibilities
 
 - Validate GitHub repository URLs
 - Extract repository owner and name
-- Retrieve repository metadata
-- Retrieve recent commits
+- Retrieve repository metadata, language breakdown, and recent commits
 - Handle GitHub API errors
 - Prepare compact data for AI analysis
 - Generate structured AI analysis using Groq
 - Return a clean JSON response to the frontend
+- Serve the frontend static assets
 
 ### Frontend Responsibilities
 
 - Accept the GitHub repository URL
-- Display repository information
-- Display Groq-generated analysis
+- Display repository information and language data
+- Display the Groq-generated analysis (and retry/regenerate it)
 - Display recent repository activity
 - Generate and display QuickChart visualizations
 - Handle loading and error states
@@ -280,6 +281,22 @@ curl -X POST "http://127.0.0.1:8000/api/analyze" \
 
 ---
 
+### 3. Regenerate AI Overview
+
+- **Path:** `/api/ai`
+- **Method:** `POST`
+- **Body:** the `repository` and `activity` objects returned by `/api/analyze`
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/ai" \
+  -H "Content-Type: application/json" \
+  -d '{"repository": { ... }, "activity": { ... }}'
+```
+
+Returns the same `AIAnalysis` object used in `ai_analysis`.
+
+---
+
 ## 📦 Example Response
 
 ### `200 OK`
@@ -295,7 +312,16 @@ curl -X POST "http://127.0.0.1:8000/api/analyze" \
     "stars": 54728,
     "forks": 12106,
     "open_issues": 244,
+    "watchers": 1343,
+    "homepage": "https://requests.readthedocs.io/en/latest/",
+    "avatar_url": "https://avatars.githubusercontent.com/u/64784618?v=4",
+    "archived": false,
+    "fork": false,
     "language": "Python",
+    "languages": {
+      "Python": 390104,
+      "Makefile": 2527
+    },
     "topics": [
       "client",
       "cookies",
@@ -317,7 +343,9 @@ curl -X POST "http://127.0.0.1:8000/api/analyze" \
         "sha": "3c7baaa",
         "message": "Bump the actions group with 4 updates (#7636)",
         "author": "dependabot[bot]",
-        "date": "2026-10-26T17:14:41Z"
+        "date": "2026-10-26T17:14:41Z",
+        "url": "https://github.com/psf/requests/commit/3c7baaa05ab4aa49cc819ce3a819d260de19c157",
+        "avatar_url": "https://avatars.githubusercontent.com/in/29110?v=4"
       },
       {
         "sha": "611c616",
@@ -373,9 +401,14 @@ curl -X POST "http://127.0.0.1:8000/api/analyze" \
       "Dependabot bot activity reflects proactive dependency updates"
     ],
     "short_verdict": "Requests remains a well-maintained, widely adopted HTTP library for Python with strong community backing."
-  }
+  },
+  "ai_error": null,
+  "ai_model": "openai/gpt-oss-120b"
 }
 ```
+
+If Groq fails or is not configured, `ai_analysis` is `null` and `ai_error` explains why;
+the `repository` and `activity` fields are still returned with `200 OK`.
 
 ---
 
@@ -393,9 +426,10 @@ The visualizations include repository metrics such as:
 - 📝 Recent commit activity
 - 📈 Repository activity indicators
 
-The current QuickChart integration uses the public `/chart` endpoint and does not require an API key.
-
-The QuickChart integration is handled directly in `index.html` through JavaScript functions that generate Chart.js configuration objects and send them to the QuickChart rendering endpoint.
+The QuickChart integration lives in `app.js`: the UI measures the rendered card,
+builds a Chart.js configuration, and requests a PNG from the QuickChart `/chart`
+endpoint. If the image fails or takes too long, a local SVG/CSS chart is drawn
+instead so the report never has an empty panel.
 
 ---
 
@@ -429,12 +463,13 @@ RepoSnap follows basic security practices for handling API credentials:
 
 ## 🌐 Frontend Integration & CORS
 
-Cross-Origin Resource Sharing (CORS) is enabled through FastAPI's `CORSMiddleware` to allow the frontend application to communicate with the backend.
+Cross-Origin Resource Sharing (CORS) is enabled through FastAPI's `CORSMiddleware` so the UI can also be opened from a separate dev server if needed.
 
-The frontend sends repository analysis requests to:
+Served by FastAPI, the UI calls same-origin endpoints:
 
 ```text
-http://127.0.0.1:8000/api/analyze
+POST /api/analyze   →  repository + activity + ai_analysis
+POST /api/ai        →  regenerated AIAnalysis
 ```
 
 The backend returns structured JSON containing:
@@ -442,7 +477,9 @@ The backend returns structured JSON containing:
 ```text
 repository
 activity
-ai_analysis
+ai_analysis   (null when AI is unavailable)
+ai_error      (reason when ai_analysis is null)
+ai_model
 ```
 
 This structure allows the frontend to independently display repository metrics, AI analysis, recent activity, and visual analytics.
@@ -490,7 +527,6 @@ Potential future improvements include:
 - Supporting additional GitHub repository insights
 
 ---
-
 
 ## 🧰 Troubleshooting Guide
 
@@ -559,6 +595,8 @@ If RepoSnap does not work as expected, check the following common issues before 
 - Restart the backend after installation.
 
 If the issue persists, include the error message, the affected endpoint, and the steps needed to reproduce the problem when reporting it.
+
+---
 
 ## 👩‍💻 Project
 

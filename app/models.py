@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -25,6 +25,8 @@ class CommitInfo(BaseModel):
     message: str = Field(default="", description="First line of the commit message")
     author: Optional[str] = Field(default=None, description="Author name or username, or None if unavailable")
     date: Optional[str] = Field(default=None, description="Commit ISO 8601 date timestamp, or None if unavailable")
+    url: Optional[str] = Field(default=None, description="HTML URL to view the commit on GitHub")
+    avatar_url: Optional[str] = Field(default=None, description="Author avatar image URL, or None if unavailable")
 
 
 class RepositoryActivity(BaseModel):
@@ -45,7 +47,16 @@ class RepositoryDetails(BaseModel):
     stars: int = Field(default=0, ge=0, description="Stargazers count")
     forks: int = Field(default=0, ge=0, description="Forks count")
     open_issues: int = Field(default=0, ge=0, description="Open issues count")
+    watchers: int = Field(default=0, ge=0, description="Watchers (subscribers) count")
+    homepage: Optional[str] = Field(default=None, description="Project homepage or demo URL, or None if unset")
+    avatar_url: Optional[str] = Field(default=None, description="Owner avatar image URL, or None if unavailable")
+    archived: bool = Field(default=False, description="Whether the repository is archived (read-only)")
+    fork: bool = Field(default=False, description="Whether the repository is a fork")
     language: Optional[str] = Field(default=None, description="Primary programming language, or None if not specified")
+    languages: Dict[str, int] = Field(
+        default_factory=dict,
+        description="Language name to bytes-of-code mapping from the GitHub languages endpoint"
+    )
     topics: List[str] = Field(default_factory=list, description="Repository topics or tags")
     license: Optional[str] = Field(default=None, description="License name or SPDX ID, or None if unspecified")
     created_at: Optional[str] = Field(default=None, description="Creation timestamp in ISO 8601 format, or None")
@@ -81,7 +92,18 @@ class AnalyzeResponse(BaseModel):
     """Combined response payload containing GitHub metadata and AI explanation."""
     repository: RepositoryDetails = Field(..., description="Repository metadata from GitHub API")
     activity: RepositoryActivity = Field(default_factory=RepositoryActivity, description="Repository activity information")
-    ai_analysis: AIAnalysis = Field(..., description="AI-generated explanation and insights from Groq")
+    ai_analysis: Optional[AIAnalysis] = Field(default=None, description="AI-generated explanation, or None if generation failed")
+    ai_error: Optional[str] = Field(default=None, description="Human-readable reason AI analysis is unavailable")
+    ai_model: str = Field(default="", description="Groq model configured on the server")
+
+
+class AIRequest(BaseModel):
+    """Request body for regenerating the AI overview from already-fetched repository data."""
+    repository: RepositoryDetails = Field(..., description="Repository metadata previously returned by /api/analyze")
+    activity: RepositoryActivity = Field(
+        default_factory=RepositoryActivity,
+        description="Activity information previously returned by /api/analyze"
+    )
 
 
 class HealthResponse(BaseModel):

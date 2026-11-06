@@ -1,3 +1,4 @@
+import asyncio
 import re
 from urllib.parse import urlparse
 from typing import Tuple
@@ -71,9 +72,12 @@ async def fetch_github_repository(owner: str, repo: str) -> Tuple[RepositoryDeta
     """
     headers = _build_github_headers()
     repo_url = f"https://api.github.com/repos/{owner}/{repo}"
-    commits_url = f"https://api.github.com/repos/{owner}/{repo}/commits?per_page=5"
+    commits_url = f"https://api.github.com/repos/{owner}/{repo}/commits?per_page=8"
+    languages_url = f"https://api.github.com/repos/{owner}/{repo}/languages"
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    # GitHub answers renamed/transferred repositories with 301 → follow to the canonical repo,
+    # and allow enough redirects so a renamed repo's commits/languages calls resolve too.
+    async with httpx.AsyncClient(timeout=15.0, trust_env=False, follow_redirects=True) as client:
         # 1. Fetch Repository Information
         try:
             repo_res = await client.get(repo_url, headers=headers)
@@ -153,16 +157,27 @@ async def fetch_github_repository(owner: str, repo: str) -> Tuple[RepositoryDeta
         raw_topics = data.get("topics")
         topics = [str(t).strip() for t in raw_topics if str(t).strip()] if isinstance(raw_topics, list) else []
 
+        owner_data = data.get("owner") if isinstance(data.get("owner"), dict) else {}
+        homepage = data.get("homepage")
+        if homepage is not None:
+            homepage = str(homepage).strip() or None
+
         repository = RepositoryDetails(
             name=str(data.get("name") or repo),
             full_name=str(data.get("full_name") or f"{owner}/{repo}"),
-            owner=str(data.get("owner", {}).get("login", owner) if isinstance(data.get("owner"), dict) else owner),
+            owner=str(owner_data.get("login") or owner),
             description=description,
             url=str(data.get("html_url") or f"https://github.com/{owner}/{repo}"),
             stars=int(data.get("stargazers_count") or 0),
             forks=int(data.get("forks_count") or 0),
             open_issues=int(data.get("open_issues_count") or 0),
+            watchers=int(data.get("subscribers_count") or 0),
+            homepage=homepage,
+            avatar_url=owner_data.get("avatar_url"),
+            archived=bool(data.get("archived")),
+            fork=bool(data.get("fork")),
             language=language,
+            languages={},
             topics=topics,
             license=license_name,
             created_at=data.get("created_at"),
@@ -170,35 +185,60 @@ async def fetch_github_repository(owner: str, repo: str) -> Tuple[RepositoryDeta
             default_branch=data.get("default_branch") or "main",
         )
 
-        # 2. Fetch Recent Activity (commits)
-        recent_commits: list[CommitInfo] = []
-        try:
-            commits_res = await client.get(commits_url, headers=headers)
-            if commits_res.status_code == 200:
-                raw_commits = commits_res.json()
-                if isinstance(raw_commits, list):
-                    for item in raw_commits[:5]:
-                        sha = (item.get("sha") or "")[:7]
-                        commit_data = item.get("commit") or {}
-                        raw_msg = commit_data.get("message") or ""
-                        # Take only first line of commit message for compactness
-                        first_line_msg = raw_msg.splitlines()[0] if raw_msg else "No commit message"
-                        
-                        author_data = commit_data.get("author") or {}
-                        author_name = author_data.get("name") or item.get("author", {}).get("login") or "Unknown"
-                        commit_date = author_data.get("date")
+        # 2. Fetch recent commits and language breakdown concurrently.
+        #    Both are non-critical enrichment; analysis still works if either fails.
+        commits_res, languages_res = await asyncio.gather(
+            client.get(commits_url, headers=headers),
+            client.get(languages_url, headers=headers),
+            return_exceptions=True,
+        )
 
-                        recent_commits.append(
-                            CommitInfo(
-                                sha=sha,
-                                message=first_line_msg,
-                                author=author_name,
-                                date=commit_date,
-                            )
+        recent_commits: list[CommitInfo] = []
+        if isinstance(commits_res, httpx.Response) and commits_res.status_code == 200:
+            try:
+                raw_commits = commits_res.json()
+            except ValueError:
+                raw_commits = []
+            if isinstance(raw_commits, list):
+                for item in raw_commits[:8]:
+                    if not isinstance(item, dict):
+                        continue
+                    sha = (item.get("sha") or "")[:7]
+                    commit_data = item.get("commit") or {}
+                    raw_msg = commit_data.get("message") or ""
+                    first_line_msg = raw_msg.splitlines()[0] if raw_msg else "No commit message"
+
+                    author_data = commit_data.get("author") or {}
+                    github_author = item.get("author") if isinstance(item.get("author"), dict) else {}
+                    author_name = author_data.get("name") or github_author.get("login") or "Unknown"
+                    commit_date = author_data.get("date")
+
+                    recent_commits.append(
+                        CommitInfo(
+                            sha=sha,
+                            message=first_line_msg,
+                            author=author_name,
+                            date=commit_date,
+                            url=item.get("html_url") or (f"{repository.url}/commit/{item.get('sha')}" if item.get("sha") else None),
+                            avatar_url=github_author.get("avatar_url"),
                         )
-        except Exception:
-            # Recent commits are non-critical enrichment; do not fail analysis if commits endpoint errors
-            recent_commits = []
+                    )
+
+        languages: dict[str, int] = {}
+        if isinstance(languages_res, httpx.Response) and languages_res.status_code == 200:
+            try:
+                raw_languages = languages_res.json()
+            except ValueError:
+                raw_languages = {}
+            if isinstance(raw_languages, dict):
+                for lang, size in raw_languages.items():
+                    try:
+                        bytes_count = int(size)
+                    except (TypeError, ValueError):
+                        continue
+                    if bytes_count > 0:
+                        languages[str(lang)] = bytes_count
+        repository.languages = languages
 
         activity = RepositoryActivity(recent_commits=recent_commits)
         return repository, activity

@@ -624,7 +624,7 @@ const METRIC_COLORS = ['#fbbf24', '#38bdf8', '#4ade80', '#c084fc'];
 function chartUrl(config, width, height) {
   const params = new URLSearchParams({
     c: JSON.stringify(config),
-    w: String(Math.max(200, Math.round(width))),
+    w: String(Math.round(width)),
     h: String(Math.max(150, Math.round(height))),
     devicePixelRatio: '2',
     backgroundColor: 'transparent',

@@ -2,7 +2,7 @@
 
 RepoSnap is a high-performance GitHub repository analysis platform that takes a public GitHub repository URL, extracts metadata and recent activity via the GitHub REST API, and delivers an intelligent, factual AI-powered breakdown using the Groq API.
 
-The frontend also uses the QuickChart API to transform repository metrics and activity data into visual analytics.
+The frontend also uses the QuickChart API to transform repository metrics and language data into visual analytics.
 
 Built with a FastAPI backend and a lightweight frontend, RepoSnap provides clean, structured repository insights through an end-to-end GitHub → AI → visualization workflow.
 
@@ -53,8 +53,8 @@ RepoSnap/
 ### 1. Clone or Open the Repository
 
 ```bash
-git clone https://github.com/KomalVala97/Raposnap.git
-cd Raposnap
+git clone https://github.com/KomalVala97/Reposnap.git
+cd Reposnap
 ```
 
 ### 2. Create and Activate a Virtual Environment
@@ -418,13 +418,13 @@ RepoSnap uses the [QuickChart API](https://quickchart.io/) to generate visual an
 
 The frontend dynamically creates QuickChart URLs using the repository data returned by the FastAPI backend and loads the generated charts into the UI.
 
-The visualizations include repository metrics such as:
+The visualizations include:
 
+- 🧩 Language breakdown donut chart (share of bytes per language)
 - ⭐ Stars
 - 🍴 Forks
 - 🐛 Open issues
-- 📝 Recent commit activity
-- 📈 Repository activity indicators
+- 👀 Watchers
 
 The QuickChart integration lives in `app.js`: the UI measures the rendered card,
 builds a Chart.js configuration, and requests a PNG from the QuickChart `/chart`
@@ -613,3 +613,10 @@ QuickChart API
        =
 RepoSnap 🚀
 ```
+
+---
+
+## 👥 Contributors
+
+1. **Komal Vala**
+2. **Dishita Charpot**
